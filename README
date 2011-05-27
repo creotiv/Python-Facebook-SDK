@@ -1,0 +1,13 @@
+Unofficial Python client library for the Facebook Platform.
+
+This client library is designed to support the Facebook Authentication and 
+Graph API. Read more about the Graph API at 
+http://developers.facebook.com/docs/api. 
+
+Example of use:
+
+   fb       = Facebook.init(request,app_id,app_secret)
+   session  = fb.getSession()
+   graph    = fb.getGraph()
+   user     = graph.get_object("me")
+   friends  = graph.get_connections(user["id"], "friends")
