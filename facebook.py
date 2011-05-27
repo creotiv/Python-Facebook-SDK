@@ -130,17 +130,7 @@ class Facebook(object):
         except Exception,e:
             return None
             
-        res = {
-            'access_token':data['oauth_token'],
-            'expires':data['expires'],
-            'uid':data['user_id']
-        }
-        sig = self.generate_sig(res,secret)
-        
-        user = data['user'] if data.has_key('user') else ''
-        res['sig'] = sig
-
-        return res,user
+        return data
 
     def get_from_cookies(cookies,app_id,app_secret):
         """
@@ -191,11 +181,23 @@ class Facebook(object):
         session        = None
         
         if signed_request:
-            session,user = self.get_from_signed_request(signed_request,app_secret)
+            data = self.get_from_signed_request(signed_request,app_secret)
+            if data.has_key('oauth_token') and data.has_key('user_id'):
+                res = {
+                    'access_token':data['oauth_token'],
+                    'expires':data['expires'],
+                    'uid':data['user_id']
+                }
+                sig = self.generate_sig(res,secret)
+                res['sig'] = sig
+                session = res
+            
         
         if not session and cookies:
             session = self.get_from_cookies(cookies,app_id,app_secret)
-            
+            if (not data.has_key('oauth_token')) or (not data.has_key('user_id')):
+                session = None
+                
         if not session:
             return None
         return session
