@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Copyright 2011 Andrey Nikishaev
+# Copyright 2012 Andrey Nikishaev
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
@@ -88,8 +88,10 @@ class Facebook(object):
             
             request_or_cookie - dictionary object
         """    
-        self.graph   = None
-        self.session = self.getSession(request_or_cookie, app_id, app_secret)
+        self.app_id     = app_id
+        self.app_secret = app_secret
+        self.graph      = None
+        self.session    = self.getSession(request_or_cookie, app_id, app_secret)
     
         if not session:
             return False
@@ -107,7 +109,7 @@ class Facebook(object):
         base_string += str(secret);
         return hashlib.md5(base_string).hexdigest();
 
-    def get_from_signed_request(self,data,secret):
+    def get_access_token_from_signed_request(self,data,secret):
         """
             Get session from signed_request.
             More info: http://developers.facebook.com/docs/authentication/signed_request/
@@ -132,7 +134,7 @@ class Facebook(object):
             
         return data
 
-    def get_from_cookies(cookies,app_id,app_secret):
+    def get_access_token_from_cookies(cookies,app_id,app_secret):
         """
             Get session from Facebook cookie
             
@@ -166,6 +168,17 @@ class Facebook(object):
                 return None
         except:
             return None
+            
+    def get_access_token_from_code(cookies,app_id,app_secret):
+        pass
+            
+    def get_app_access_token(self, app_id=None, app_secret=None):
+        """
+            Generates application access_token.
+        """ 
+        app_id     = app_id or self.app_id;
+        app_secret = app_secret or self.app_secret 
+        return app_id+'|'+app_secret;
 
     def getSession(self,request_or_cookie=None, app_id=None, app_secret=None):
         """
@@ -173,15 +186,16 @@ class Facebook(object):
         """
         if self.session:
             return self.session
+            
         if (not app_id) and (not app_secret) and (not request_or_cookie):
             return None
 
         signed_request = request_or_cookies.get('signed_request')
-        cookies        = request_or_cookies.get("fbs_" + app_id, "")
+        cookies        = request_or_cookies.get("fbsr_" + app_id, "")
         session        = None
         
         if signed_request:
-            data = self.get_from_signed_request(signed_request,app_secret)
+            data = self.get_access_token_from_signed_request(signed_request,app_secret)
             if data.has_key('oauth_token') and data.has_key('user_id'):
                 res = {
                     'access_token':data['oauth_token'],
@@ -194,12 +208,15 @@ class Facebook(object):
             
         
         if not session and cookies:
-            session = self.get_from_cookies(cookies,app_id,app_secret)
+            session = self.get_access_token_from_cookies(cookies,app_id,app_secret)
             if (not data.has_key('oauth_token')) or (not data.has_key('user_id')):
                 session = None
                 
         if not session:
-            return None
+            session = self.get_app_access_token(app_id,app_secret)
+        
+        self.session = session
+        
         return session
         
     def getGraph(self):
