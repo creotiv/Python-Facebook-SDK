@@ -22,7 +22,8 @@ http://developers.facebook.com/docs/api.
 
 Example of use:
 
-   fb       = Facebook.init(request,app_id,app_secret)
+   request  = {'signed_request':'...'}
+   fb       = Facebook(request,app_id,app_secret)
    session  = fb.getSession()
    graph    = fb.getGraph()
    user     = graph.get_object("me")
@@ -30,7 +31,7 @@ Example of use:
 
 """
 
-import cgi
+import urlparse
 import hashlib
 import time
 import urllib
@@ -38,6 +39,12 @@ import hmac
 import base64
 import string
 import hashlib
+
+def _unicode(value):
+    if isinstance(value, str):
+        return value.decode("utf-8")
+    assert isinstance(value, unicode)
+    return value
 
 try:
     import json
@@ -73,8 +80,10 @@ class Facebook(object):
         Facebook SDK
     
         Example:
-
-           fb       = Facebook.init(request,app_id,app_secret)
+            
+           
+           request  = {'signed_request':'...'}
+           fb       = Facebook(request,app_id,app_secret)
            session  = fb.getSession()
            graph    = fb.getGraph()
            user     = graph.get_object("me")
@@ -82,7 +91,7 @@ class Facebook(object):
 
     """
 
-    def init(self,request_or_cookie, app_id, app_secret):
+    def __init__(self,request_or_cookie, app_id, app_secret):
         """
             Init Facebook session
             
@@ -91,13 +100,10 @@ class Facebook(object):
         self.app_id     = app_id
         self.app_secret = app_secret
         self.graph      = None
+        self.session    = None
+        self.graph      = None     
+
         self.session    = self.getSession(request_or_cookie, app_id, app_secret)
-    
-        if not session:
-            return False
-        
-        self.graph = GraphAPI(session['access_token'])    
-        return True
     
     def generate_sig(self,sess,secret):
         """
@@ -134,7 +140,7 @@ class Facebook(object):
             
         return data
 
-    def get_access_token_from_cookies(cookies,app_id,app_secret):
+    def get_access_token_from_cookies(self,cookie,app_id,app_secret):
         """
             Get session from Facebook cookie
             
@@ -154,22 +160,19 @@ class Facebook(object):
             });
             
         """
-        cookie = cookies.get("fbs_" + app_id, "")
-        if not cookie: return None
-        try:
-            args = dict((k, v[-1]) for k, v in cgi.parse_qs(cookie.strip('"')).items())
-            payload = "".join(k + "=" + args[k] for k in sorted(args.keys())
-                              if k != "sig")
-            sig = hashlib.md5(payload + app_secret).hexdigest()
-            expires = int(args["expires"])
-            if sig == args.get("sig") and (expires == 0 or time.time() < expires):
-                return args
-            else:
-                return None
-        except:
-            return None
+        parsed = self.get_access_token_from_signed_request(cookie,app_secret)
+        if 'code' in parsed:
+            graph  = GraphAPI()
+            params = { 'client_id'      : app_id,
+                       'client_secret'  : app_secret,
+                       'redirect_uri'   : '',
+                       'code'           : parsed['code']
+            }
+            access_token = graph.getAccessToken(params)
+            parsed.update(access_token)
+        return parsed
             
-    def get_access_token_from_code(cookies,app_id,app_secret):
+    def get_access_token_from_code(self,cookies,app_id,app_secret):
         pass
             
     def get_app_access_token(self, app_id=None, app_secret=None):
@@ -190,8 +193,8 @@ class Facebook(object):
         if (not app_id) and (not app_secret) and (not request_or_cookie):
             return None
 
-        signed_request = request_or_cookies.get('signed_request')
-        cookies        = request_or_cookies.get("fbsr_" + app_id, "")
+        signed_request = request_or_cookie.get('signed_request')
+        cookies        = request_or_cookie.get("fbsr_" + app_id, "")
         session        = None
         
         if signed_request:
@@ -202,26 +205,29 @@ class Facebook(object):
                     'expires':data['expires'],
                     'uid':data['user_id']
                 }
-                sig = self.generate_sig(res,secret)
+                sig = self.generate_sig(res,app_secret)
                 res['sig'] = sig
                 session = res
             
         
         if not session and cookies:
             session = self.get_access_token_from_cookies(cookies,app_id,app_secret)
-            if (not data.has_key('oauth_token')) or (not data.has_key('user_id')):
+            if not session or (not session.has_key('access_token')) or (not session.has_key('user_id')):
                 session = None
                 
         if not session:
-            session = self.get_app_access_token(app_id,app_secret)
+            session = {'expires':'','access_token':''}
+            session['access_token'] = self.get_app_access_token(app_id,app_secret)
         
         self.session = session
         
         return session
         
     def getGraph(self):
-        if not graph:
-           raise FacebookError('Facebook access_token is undefined.')
+        if not self.graph:
+            if not self.session['access_token']:
+                raise FacebookError('Facebook access_token is undefined.')   
+            self.graph = GraphAPI(self.session['access_token'])
         return self.graph
         
 
@@ -328,6 +334,20 @@ class GraphAPI(object):
         """Deletes the object with the given ID from the graph."""
         self.request(id, post_args={"method": "delete"})
 
+    def getAccessToken(self,args):
+        """Generate access_token with request to graph api /oauth/access_token
+           method.
+        """
+        if not args: args = {}
+        file = urllib.urlopen("https://graph.facebook.com/oauth/access_token?" +
+                              urllib.urlencode(args))
+        try:
+            response = urlparse.parse_qs(file.read())
+        finally:
+            file.close()
+        return {'access_token':response['access_token'][0],
+                'expires':response['expires'][0]}
+
     def request(self, path, args=None, post_args=None):
         """Fetches the given path in the Graph API.
 
@@ -344,7 +364,7 @@ class GraphAPI(object):
         file = urllib.urlopen("https://graph.facebook.com/" + path + "?" +
                               urllib.urlencode(args), post_data)
         try:
-            response = _parse_json(file.read())
+            response = json_decode(file.read())
         finally:
             file.close()
         if response.get("error"):
