@@ -6,8 +6,9 @@ http://developers.facebook.com/docs/api.
 
 Example of use:
 
-   fb       = Facebook.init(request,app_id,app_secret)
-   session  = fb.getSession()
-   graph    = fb.getGraph()
-   user     = graph.get_object("me")
-   friends  = graph.get_connections(user["id"], "friends")
+    request  = {'signed_request':'...'}
+    fb       = Facebook(request,app_id,app_secret)
+    session  = fb.getSession()
+    graph    = fb.getGraph()
+    user     = graph.get_object("me")
+    friends  = graph.get_connections(user["id"], "friends")
